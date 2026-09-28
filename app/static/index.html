@@ -1,0 +1,1018 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Day 12 AI Agent — Production Cloud Service</title>
+  <meta name="description" content="AI Agent Production Cloud Service triển khai trên Railway với 12-Factor config, rate limiter, cost guard và Redis memory.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-base: #06080d;
+      --bg-surface: #0e121b;
+      --bg-card: rgba(17, 23, 36, 0.65);
+      --bg-glass: rgba(255, 255, 255, 0.03);
+      --border-subtle: rgba(255, 255, 255, 0.08);
+      --border-glow: rgba(0, 242, 254, 0.3);
+      
+      --accent-cyan: #00f2fe;
+      --accent-blue: #4facfe;
+      --accent-purple: #8a2be2;
+      --accent-gradient: linear-gradient(135deg, #00f2fe 0%, #4facfe 50%, #8a2be2 100%);
+      
+      --text-main: #f0f4fc;
+      --text-muted: #8e9bb2;
+      --text-dim: #546076;
+      
+      --badge-success-bg: rgba(16, 185, 129, 0.12);
+      --badge-success-border: rgba(16, 185, 129, 0.3);
+      --badge-success-text: #34d399;
+      
+      --badge-warning-bg: rgba(245, 158, 11, 0.12);
+      --badge-warning-border: rgba(245, 158, 11, 0.3);
+      --badge-warning-text: #fbbf24;
+      
+      --badge-error-bg: rgba(239, 68, 68, 0.12);
+      --badge-error-border: rgba(239, 68, 68, 0.3);
+      --badge-error-text: #f87171;
+
+      --radius-sm: 8px;
+      --radius-md: 14px;
+      --radius-lg: 20px;
+      --radius-full: 9999px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--bg-base);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+      background-image: 
+        radial-gradient(circle at 15% 15%, rgba(79, 172, 254, 0.08) 0%, transparent 40%),
+        radial-gradient(circle at 85% 85%, rgba(138, 43, 226, 0.08) 0%, transparent 40%);
+    }
+
+    /* Header */
+    header {
+      background: rgba(10, 14, 23, 0.75);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border-subtle);
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      padding: 12px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transition: border-color 0.2s;
+    }
+
+    .brand-section {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-logo {
+      width: 40px;
+      height: 40px;
+      border-radius: var(--radius-md);
+      background: var(--accent-gradient);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-weight: 800;
+      font-size: 1.15rem;
+      box-shadow: 0 4px 16px rgba(0, 242, 254, 0.25);
+    }
+
+    .brand-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      background: linear-gradient(180deg, #ffffff 0%, #cbd5e1 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .brand-subtitle {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .probes-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .probe-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: var(--radius-full);
+      font-size: 0.75rem;
+      font-weight: 600;
+      background: var(--badge-success-bg);
+      border: 1px solid var(--badge-success-border);
+      color: var(--badge-success-text);
+      transition: all 0.3s ease;
+    }
+
+    .probe-badge.loading {
+      background: var(--badge-warning-bg);
+      border-color: var(--badge-warning-border);
+      color: var(--badge-warning-text);
+    }
+
+    .probe-badge.error {
+      background: var(--badge-error-bg);
+      border-color: var(--badge-error-border);
+      color: var(--badge-error-text);
+    }
+
+    .pulse-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: currentColor;
+      box-shadow: 0 0 8px currentColor;
+      animation: pulse 2s infinite ease-in-out;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.85); }
+    }
+
+    .btn-config {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-main);
+      padding: 7px 14px;
+      border-radius: var(--radius-sm);
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .btn-config:hover {
+      border-color: var(--accent-blue);
+      background: rgba(79, 172, 254, 0.1);
+      box-shadow: 0 0 12px rgba(79, 172, 254, 0.2);
+    }
+
+    /* Config Modal / Banner */
+    .config-panel {
+      background: rgba(14, 18, 27, 0.95);
+      backdrop-filter: blur(24px);
+      border-bottom: 1px solid var(--border-subtle);
+      padding: 16px 24px;
+      display: none;
+      animation: slideDown 0.25s ease-out;
+    }
+
+    .config-panel.active {
+      display: block;
+    }
+
+    @keyframes slideDown {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .config-grid {
+      max-width: 900px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 1fr 1fr auto;
+      gap: 16px;
+      align-items: flex-end;
+    }
+
+    .field-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .field-group label {
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .field-group input {
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-main);
+      padding: 9px 12px;
+      border-radius: var(--radius-sm);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .field-group input:focus {
+      border-color: var(--accent-cyan);
+      box-shadow: 0 0 0 2px rgba(0, 242, 254, 0.15);
+    }
+
+    .btn-save {
+      background: var(--accent-gradient);
+      color: #fff;
+      border: none;
+      padding: 9px 20px;
+      border-radius: var(--radius-sm);
+      font-weight: 600;
+      font-size: 0.85rem;
+      cursor: pointer;
+      height: 38px;
+      transition: opacity 0.2s, transform 0.1s;
+    }
+
+    .btn-save:hover {
+      opacity: 0.92;
+      transform: translateY(-1px);
+    }
+
+    /* Main Container */
+    main {
+      flex: 1;
+      max-width: 950px;
+      width: 100%;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      padding: 20px 20px 0;
+    }
+
+    /* Metrics Bar */
+    .metrics-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 16px;
+      justify-content: center;
+    }
+
+    .metric-pill {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-full);
+      padding: 6px 14px;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      backdrop-filter: blur(12px);
+    }
+
+    .metric-pill strong {
+      color: var(--text-main);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Chat Messages Canvas */
+    .chat-container {
+      flex: 1;
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+      backdrop-filter: blur(16px);
+      min-height: 480px;
+      max-height: calc(100vh - 280px);
+    }
+
+    /* Hero / Empty State */
+    .hero-placeholder {
+      margin: auto;
+      text-align: center;
+      max-width: 580px;
+      padding: 24px 0;
+      animation: fadeIn 0.4s ease;
+    }
+
+    .hero-icon {
+      width: 72px;
+      height: 72px;
+      margin: 0 auto 16px;
+      border-radius: 50%;
+      background: var(--accent-gradient);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2rem;
+      box-shadow: 0 0 32px rgba(0, 242, 254, 0.35);
+    }
+
+    .hero-placeholder h2 {
+      font-size: 1.5rem;
+      font-weight: 800;
+      margin-bottom: 8px;
+      letter-spacing: -0.02em;
+    }
+
+    .hero-placeholder p {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      line-height: 1.5;
+      margin-bottom: 24px;
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+
+    .feature-card {
+      background: var(--bg-glass);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 12px;
+      text-align: left;
+    }
+
+    .feature-card .feat-title {
+      font-weight: 600;
+      font-size: 0.8rem;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 4px;
+    }
+
+    .feature-card .feat-desc {
+      font-size: 0.72rem;
+      color: var(--text-dim);
+    }
+
+    .suggested-title {
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 10px;
+    }
+
+    .suggested-prompts {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: center;
+    }
+
+    .prompt-chip {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-muted);
+      padding: 6px 14px;
+      border-radius: var(--radius-full);
+      font-size: 0.8rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .prompt-chip:hover {
+      background: rgba(0, 242, 254, 0.1);
+      border-color: var(--accent-cyan);
+      color: #fff;
+      transform: translateY(-1px);
+    }
+
+    /* Message Rows */
+    .message-row {
+      display: flex;
+      gap: 12px;
+      width: 100%;
+      animation: fadeIn 0.3s ease;
+    }
+
+    .message-row.user {
+      flex-direction: row-reverse;
+    }
+
+    .message-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: var(--radius-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.95rem;
+      flex-shrink: 0;
+    }
+
+    .message-row.assistant .message-avatar {
+      background: var(--accent-gradient);
+      color: #fff;
+      box-shadow: 0 2px 10px rgba(0, 242, 254, 0.2);
+    }
+
+    .message-row.user .message-avatar {
+      background: #3b82f6;
+      color: #fff;
+    }
+
+    .message-bubble-wrapper {
+      max-width: 78%;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .message-bubble {
+      padding: 14px 18px;
+      border-radius: var(--radius-md);
+      font-size: 0.92rem;
+      line-height: 1.6;
+      word-break: break-word;
+    }
+
+    .message-row.assistant .message-bubble {
+      background: rgba(26, 34, 52, 0.7);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-main);
+      border-top-left-radius: 4px;
+    }
+
+    .message-row.user .message-bubble {
+      background: linear-gradient(135deg, #2563eb, #1d4ed8);
+      color: #ffffff;
+      border-top-right-radius: 4px;
+    }
+
+    .message-meta {
+      display: flex;
+      gap: 10px;
+      font-size: 0.7rem;
+      color: var(--text-dim);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .message-row.user .message-meta {
+      justify-content: flex-end;
+    }
+
+    .meta-tag {
+      background: rgba(255, 255, 255, 0.04);
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    /* Typing indicator */
+    .typing-bubble {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 14px 18px;
+    }
+
+    .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--text-muted);
+      animation: wave 1.2s infinite ease-in-out;
+    }
+
+    .dot:nth-child(2) { animation-delay: 0.2s; }
+    .dot:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes wave {
+      0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+      30% { transform: translateY(-5px); opacity: 1; }
+    }
+
+    /* Input Dock */
+    .input-dock {
+      padding: 16px 0 24px;
+    }
+
+    .input-box-wrapper {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 8px 12px 8px 18px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .input-box-wrapper:focus-within {
+      border-color: var(--accent-cyan);
+      box-shadow: 0 0 0 2px rgba(0, 242, 254, 0.15), 0 8px 24px rgba(0, 0, 0, 0.3);
+    }
+
+    #question-input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--text-main);
+      font-size: 0.95rem;
+      font-family: inherit;
+      resize: none;
+      height: 24px;
+      max-height: 120px;
+    }
+
+    #question-input::placeholder {
+      color: var(--text-dim);
+    }
+
+    .btn-send {
+      width: 42px;
+      height: 42px;
+      border-radius: var(--radius-md);
+      background: var(--accent-gradient);
+      border: none;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 1.1rem;
+      transition: transform 0.15s, opacity 0.2s;
+      flex-shrink: 0;
+    }
+
+    .btn-send:hover:not(:disabled) {
+      transform: scale(1.05);
+      box-shadow: 0 0 16px rgba(0, 242, 254, 0.4);
+    }
+
+    .btn-send:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .input-hint {
+      text-align: center;
+      font-size: 0.72rem;
+      color: var(--text-dim);
+      margin-top: 8px;
+    }
+
+    /* Alert Banner */
+    .toast-container {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      z-index: 100;
+    }
+
+    .toast {
+      background: rgba(17, 24, 39, 0.95);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      padding: 12px 18px;
+      font-size: 0.85rem;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      backdrop-filter: blur(16px);
+      animation: slideInRight 0.3s ease;
+    }
+
+    .toast.error {
+      border-color: var(--badge-error-border);
+      color: #fca5a5;
+    }
+
+    .toast.success {
+      border-color: var(--badge-success-border);
+      color: #86efac;
+    }
+
+    @keyframes slideInRight {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    @media (max-width: 640px) {
+      .config-grid { grid-template-columns: 1fr; }
+      .features-grid { grid-template-columns: 1fr; }
+      .probes-group { display: none; }
+      .message-bubble-wrapper { max-width: 90%; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header>
+    <div class="brand-section">
+      <div class="brand-logo">🤖</div>
+      <div>
+        <h1 class="brand-title">Day 12 AI Agent</h1>
+        <div class="brand-subtitle">Production Cloud & Deployment — Railway</div>
+      </div>
+    </div>
+
+    <div class="probes-group">
+      <div id="badge-health" class="probe-badge loading" title="Liveness Probe">
+        <span class="pulse-dot"></span>
+        <span id="badge-health-text">/health ...</span>
+      </div>
+      <div id="badge-ready" class="probe-badge loading" title="Readiness Probe (Redis Connected)">
+        <span class="pulse-dot"></span>
+        <span id="badge-ready-text">/ready ...</span>
+      </div>
+    </div>
+
+    <button id="btn-toggle-config" class="btn-config" type="button">
+      🔑 Cấu hình Key
+    </button>
+  </header>
+
+  <!-- Config Panel -->
+  <section id="config-panel" class="config-panel">
+    <div class="config-grid">
+      <div class="field-group">
+        <label for="input-api-key">X-API-Key (Khóa xác thực)</label>
+        <input type="password" id="input-api-key" placeholder="Dán AGENT_API_KEY ở đây..." autocomplete="off">
+      </div>
+      <div class="field-group">
+        <label for="input-user-id">X-User-Id (Tên người dùng)</label>
+        <input type="text" id="input-user-id" placeholder="sv-long..." value="sv-long">
+      </div>
+      <button id="btn-save-config" class="btn-save" type="button">Lưu Cấu Hình</button>
+    </div>
+  </section>
+
+  <!-- Main Canvas -->
+  <main>
+    <!-- Real-time Metrics -->
+    <div class="metrics-bar">
+      <div class="metric-pill">User: <strong id="metric-user">sv-long</strong></div>
+      <div class="metric-pill">Độ trễ: <strong id="metric-latency">—</strong></div>
+      <div class="metric-pill">Tokens: <strong id="metric-tokens">—</strong></div>
+      <div class="metric-pill">Chi phí lượt cuối: <strong id="metric-cost">$0.00</strong></div>
+      <div class="metric-pill">Lịch sử Redis: <strong id="metric-history">0 msgs</strong></div>
+    </div>
+
+    <!-- Chat Messages -->
+    <div id="chat-container" class="chat-container">
+      <div id="hero-placeholder" class="hero-placeholder">
+        <div class="hero-icon">🚀</div>
+        <h2>Sẵn Sàng Trò Chuyện</h2>
+        <p>Hệ thống AI Agent đã được triển khai hoàn chỉnh trên đám mây với kiến trúc chuẩn production: 12-Factor, Rate Limiter, Cost Guard và Stateless Redis Store.</p>
+        
+        <div class="features-grid">
+          <div class="feature-card">
+            <div class="feat-title">🛡️ Rate Limiter</div>
+            <div class="feat-desc">Cửa sổ trượt 60s (ZSET), chặn 429 khi vượt 10 req/phút.</div>
+          </div>
+          <div class="feature-card">
+            <div class="feat-title">💳 Cost Guard</div>
+            <div class="feat-desc">Giới hạn ngân sách $10.0/tháng, chặn 402 nếu vượt trần.</div>
+          </div>
+          <div class="feature-card">
+            <div class="feat-title">🧠 Stateless Memory</div>
+            <div class="feat-desc">Lưu trữ 20 hội thoại gần nhất trên Redis, an toàn khi scale.</div>
+          </div>
+        </div>
+
+        <div class="suggested-title">Câu hỏi gợi ý</div>
+        <div class="suggested-prompts">
+          <button class="prompt-chip" type="button">Deploy là gì?</button>
+          <button class="prompt-chip" type="button">12-Factor App gồm những yếu tố nào?</button>
+          <button class="prompt-chip" type="button">Tại sao cần graceful shutdown?</button>
+          <button class="prompt-chip" type="button">Sliding window rate limit hoạt động ra sao?</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Input Dock -->
+    <div class="input-dock">
+      <form id="chat-form">
+        <div class="input-box-wrapper">
+          <textarea id="question-input" rows="1" placeholder="Nhập câu hỏi của bạn tại đây... (Nhấn Enter để gửi)"></textarea>
+          <button id="send-button" class="btn-send" type="submit" aria-label="Gửi câu hỏi">
+            ➤
+          </button>
+        </div>
+      </form>
+      <div class="input-hint">
+        Phím tắt: <strong>Enter</strong> để gửi, <strong>Shift + Enter</strong> để xuống dòng. Nhớ cấu hình API Key ở góc trên.
+      </div>
+    </div>
+  </main>
+
+  <!-- Toast Container -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <script>
+    const STORAGE_KEY_API = "day12_agent_api_key";
+    const STORAGE_KEY_USER = "day12_agent_user_id";
+
+    const badgeHealth = document.getElementById("badge-health");
+    const badgeHealthText = document.getElementById("badge-health-text");
+    const badgeReady = document.getElementById("badge-ready");
+    const badgeReadyText = document.getElementById("badge-ready-text");
+    
+    const configPanel = document.getElementById("config-panel");
+    const btnToggleConfig = document.getElementById("btn-toggle-config");
+    const inputApiKey = document.getElementById("input-api-key");
+    const inputUserId = document.getElementById("input-user-id");
+    const btnSaveConfig = document.getElementById("btn-save-config");
+    
+    const chatContainer = document.getElementById("chat-container");
+    const heroPlaceholder = document.getElementById("hero-placeholder");
+    const chatForm = document.getElementById("chat-form");
+    const questionInput = document.getElementById("question-input");
+    const sendButton = document.getElementById("send-button");
+    const toastContainer = document.getElementById("toast-container");
+
+    const metricUser = document.getElementById("metric-user");
+    const metricLatency = document.getElementById("metric-latency");
+    const metricTokens = document.getElementById("metric-tokens");
+    const metricCost = document.getElementById("metric-cost");
+    const metricHistory = document.getElementById("metric-history");
+
+    // Init credentials
+    let currentApiKey = localStorage.getItem(STORAGE_KEY_API) || "";
+    let currentUserId = localStorage.getItem(STORAGE_KEY_USER) || "sv-long";
+
+    inputApiKey.value = currentApiKey;
+    inputUserId.value = currentUserId;
+    metricUser.textContent = currentUserId;
+
+    if (!currentApiKey) {
+      configPanel.classList.add("active");
+    }
+
+    // Toggle config
+    btnToggleConfig.addEventListener("click", () => {
+      configPanel.classList.toggle("active");
+    });
+
+    btnSaveConfig.addEventListener("click", () => {
+      currentApiKey = inputApiKey.value.trim();
+      currentUserId = inputUserId.value.trim() || "anonymous";
+      localStorage.setItem(STORAGE_KEY_API, currentApiKey);
+      localStorage.setItem(STORAGE_KEY_USER, currentUserId);
+      metricUser.textContent = currentUserId;
+      configPanel.classList.remove("active");
+      showToast("Đã lưu API Key và User ID!", "success");
+    });
+
+    // Check Probes
+    async function checkProbes() {
+      try {
+        const resHealth = await fetch("/health");
+        if (resHealth.ok) {
+          badgeHealth.className = "probe-badge";
+          badgeHealthText.textContent = "Live (200 OK)";
+        } else {
+          badgeHealth.className = "probe-badge error";
+          badgeHealthText.textContent = `Live (${resHealth.status})`;
+        }
+      } catch (err) {
+        badgeHealth.className = "probe-badge error";
+        badgeHealthText.textContent = "Live: Unreachable";
+      }
+
+      try {
+        const resReady = await fetch("/ready");
+        if (resReady.ok) {
+          badgeReady.className = "probe-badge";
+          badgeReadyText.textContent = "Redis Ready (200)";
+        } else {
+          badgeReady.className = "probe-badge error";
+          badgeReadyText.textContent = `Redis (${resReady.status})`;
+        }
+      } catch (err) {
+        badgeReady.className = "probe-badge error";
+        badgeReadyText.textContent = "Ready: Unreachable";
+      }
+    }
+    checkProbes();
+    setInterval(checkProbes, 30000);
+
+    // Suggested prompts
+    document.querySelectorAll(".prompt-chip").forEach(btn => {
+      btn.addEventListener("click", () => {
+        questionInput.value = btn.textContent;
+        sendMessage();
+      });
+    });
+
+    // Auto-resize textarea
+    questionInput.addEventListener("input", () => {
+      questionInput.style.height = "auto";
+      questionInput.style.height = Math.min(questionInput.scrollHeight, 120) + "px";
+    });
+
+    questionInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+      }
+    });
+
+    chatForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      sendMessage();
+    });
+
+    async function sendMessage() {
+      const q = questionInput.value.trim();
+      if (!q) return;
+
+      if (!currentApiKey) {
+        configPanel.classList.add("active");
+        showToast("Vui lòng nhập API Key để tiếp tục!", "error");
+        inputApiKey.focus();
+        return;
+      }
+
+      if (heroPlaceholder) {
+        heroPlaceholder.style.display = "none";
+      }
+
+      // Append user bubble
+      appendMessage("user", q);
+      questionInput.value = "";
+      questionInput.style.height = "24px";
+      sendButton.disabled = true;
+
+      // Append typing indicator
+      const typingEl = appendTyping();
+      const startTime = performance.now();
+
+      try {
+        const response = await fetch("/ask", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-API-Key": currentApiKey,
+            "X-User-Id": currentUserId,
+          },
+          body: JSON.stringify({ question: q }),
+        });
+
+        const latency = Math.round(performance.now() - startTime);
+        metricLatency.textContent = `${latency}ms`;
+        typingEl.remove();
+
+        if (response.ok) {
+          const data = await response.json();
+          appendMessage("assistant", data.answer, {
+            tokens: `${data.tokens?.in || 0} in / ${data.tokens?.out || 0} out`,
+            cost: `$${(data.cost_usd || 0).toFixed(6)}`,
+            history: `${data.history_length || 0} msgs`,
+          });
+
+          metricTokens.textContent = `${data.tokens?.in || 0} in / ${data.tokens?.out || 0} out`;
+          metricCost.textContent = `$${(data.cost_usd || 0).toFixed(6)}`;
+          metricHistory.textContent = `${data.history_length || 0} msgs`;
+        } else if (response.status === 401) {
+          appendMessage("assistant", "⚠️ **401 Unauthorized**: API Key không chính xác hoặc chưa được cấu hình. Vui lòng kiểm tra lại nút 'Cấu hình Key'.");
+          showToast("Lỗi 401: API Key không hợp lệ!", "error");
+          configPanel.classList.add("active");
+        } else if (response.status === 429) {
+          const retryAfter = response.headers.get("Retry-After") || 60;
+          appendMessage("assistant", `⏳ **429 Too Many Requests**: Bạn đã gửi quá 10 câu hỏi/phút (Sliding Window Rate Limit). Vui lòng thử lại sau ${retryAfter} giây.`);
+          showToast("Lỗi 429: Chạm giới hạn Rate Limit!", "error");
+        } else if (response.status === 402) {
+          appendMessage("assistant", "💳 **402 Payment Required**: Bạn đã vượt quá ngân sách hàng tháng ($10.00). Cost Guard đã kích hoạt để bảo vệ ngân sách.");
+          showToast("Lỗi 402: Vượt ngân sách tháng!", "error");
+        } else {
+          const errText = await response.text();
+          appendMessage("assistant", `❌ Lỗi (${response.status}): ${errText}`);
+          showToast(`Lỗi HTTP ${response.status}`, "error");
+        }
+      } catch (err) {
+        typingEl.remove();
+        appendMessage("assistant", `❌ Lỗi kết nối: ${err.message}. Kiểm tra xem service có đang chạy không.`);
+        showToast("Lỗi mạng / Không thể kết nối!", "error");
+      } finally {
+        sendButton.disabled = false;
+        questionInput.focus();
+      }
+    }
+
+    function appendMessage(role, text, meta = null) {
+      const row = document.createElement("div");
+      row.className = `message-row ${role}`;
+
+      const avatar = document.createElement("div");
+      avatar.className = "message-avatar";
+      avatar.textContent = role === "user" ? "👤" : "🤖";
+
+      const wrapper = document.createElement("div");
+      wrapper.className = "message-bubble-wrapper";
+
+      const bubble = document.createElement("div");
+      bubble.className = "message-bubble";
+      bubble.textContent = text;
+      wrapper.appendChild(bubble);
+
+      if (meta) {
+        const metaEl = document.createElement("div");
+        metaEl.className = "message-meta";
+        metaEl.innerHTML = `
+          <span class="meta-tag">⚡ ${meta.tokens}</span>
+          <span class="meta-tag">💰 ${meta.cost}</span>
+          <span class="meta-tag">🧠 ${meta.history}</span>
+        `;
+        wrapper.appendChild(metaEl);
+      }
+
+      row.appendChild(avatar);
+      row.appendChild(wrapper);
+      chatContainer.appendChild(row);
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+      return row;
+    }
+
+    function appendTyping() {
+      const row = document.createElement("div");
+      row.className = "message-row assistant";
+
+      const avatar = document.createElement("div");
+      avatar.className = "message-avatar";
+      avatar.textContent = "🤖";
+
+      const wrapper = document.createElement("div");
+      wrapper.className = "message-bubble-wrapper";
+
+      const bubble = document.createElement("div");
+      bubble.className = "message-bubble typing-bubble";
+      bubble.innerHTML = `
+        <span class="dot"></span>
+        <span class="dot"></span>
+        <span class="dot"></span>
+      `;
+
+      wrapper.appendChild(bubble);
+      row.appendChild(avatar);
+      row.appendChild(wrapper);
+      chatContainer.appendChild(row);
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+      return row;
+    }
+
+    function showToast(message, type = "info") {
+      const toast = document.createElement("div");
+      toast.className = `toast ${type}`;
+      toast.textContent = message;
+      toastContainer.appendChild(toast);
+      setTimeout(() => {
+        toast.style.opacity = "0";
+        setTimeout(() => toast.remove(), 300);
+      }, 3500);
+    }
+  </script>
+</body>
+</html>

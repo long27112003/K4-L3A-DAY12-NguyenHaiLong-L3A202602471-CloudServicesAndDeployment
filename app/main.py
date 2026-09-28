@@ -16,8 +16,10 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from functools import lru_cache
 
+from pathlib import Path
+
 from fastapi import Depends, FastAPI
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from utils.mock_llm import ask_llm
@@ -64,6 +66,15 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="Day 12 Production Agent", version=SERVICE_VERSION, lifespan=lifespan)
+STATIC_HTML_PATH = Path(__file__).parent / "static" / "index.html"
+
+
+@app.get("/", response_class=HTMLResponse)
+def index():
+    """Giao diện Web AI Agent (UI chat, metrics & probes)."""
+    if STATIC_HTML_PATH.exists():
+        return HTMLResponse(content=STATIC_HTML_PATH.read_text(encoding="utf-8"))
+    return HTMLResponse(content="<h1>AI Agent Service Running</h1>")
 
 
 class AskRequest(BaseModel):
